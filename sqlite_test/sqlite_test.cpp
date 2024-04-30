@@ -65,11 +65,13 @@ static void CreateTable(sqlite3* Database)
         wcout << L"Ошибка выполнения запроса" << endl;
     }
 }
+
 static void ExecuteQuery(sqlite3* Database, const char* query)
 {
     char* errmsg;
     Timer timer;
 
+    timer.start();
     sqlite3_stmt* pStatement;
     int execResult = sqlite3_prepare_v2(Database, query, -1, &pStatement, NULL);
     if (execResult != SQLITE_OK) {
@@ -77,23 +79,20 @@ static void ExecuteQuery(sqlite3* Database, const char* query)
         return;
     }
 
-    timer.start();
-    int step = sqlite3_step(pStatement);
-    if (step == SQLITE_ROW) {
-        const unsigned char* n = sqlite3_column_text(pStatement, 0);
-        wcout << L"Получены следующие данные " << *n  << endl;
+    while (sqlite3_step(pStatement) == SQLITE_ROW) {
+        // Чтение данных здесь, если это необходимо
     }
-    sqlite3_reset(pStatement);
     timer.stop();
 
-    std::cout << "Query time: "<< query << std::endl;
+    std::cout << "Query time: " << query << std::endl;
     std::cout << "Seconds: " << timer.elapsedSeconds() << std::endl;
 }
-static void InsertData(sqlite3* Database)
+
+static void InsertData(sqlite3* Database, int num_records)
 {
     // Генерируем и вставляем тестовые данные
-    TestObj* rows = new TestObj[50000];
-    for (int i = 0; i < 50000; i++) {
+    TestObj* rows = new TestObj[num_records];
+    for (int i = 0; i < num_records; i++) {
         rows[i] = TestObj();
     }
 
@@ -103,7 +102,7 @@ static void InsertData(sqlite3* Database)
 
     timer.start();
     sqlite3_exec(Database, "BEGIN;", nullptr, nullptr, nullptr);
-    for (int i = 0; i < 50000; i++) {
+    for (int i = 0; i < num_records; i++) {
         sqlite3_bind_text(res, 1, rows[i].Name, -1, SQLITE_STATIC);
         sqlite3_bind_text(res, 2, rows[i].Value, -1, SQLITE_STATIC);
         // выполняем выражение
@@ -119,10 +118,11 @@ static void InsertData(sqlite3* Database)
     sqlite3_exec(Database, "COMMIT;", nullptr, nullptr, nullptr);
     timer.stop();
 
-    std::cout << "Insert time:" << std::endl;
+    std::cout << "Insert time for " << num_records << " records:" << std::endl;
     std::cout << "Seconds: " << timer.elapsedSeconds() << std::endl;
     delete[] rows;
 }
+
 int main()
 {
     setlocale(LC_ALL, "Russian");
@@ -133,10 +133,17 @@ int main()
     // Создаем таблицу
     CreateTable(Database);
 
-    InsertData(Database);
+    // Вставляем данные для разного количества записей
+    int num_records[] = { 1000, 10000, 20000, 50000, 100000 };
+    for (int i = 0; i < sizeof(num_records) / sizeof(num_records[0]); ++i) {
+        InsertData(Database, num_records[i]);
+    }
 
-    // Выполняем запросы и измеряем время выполнения
-    ExecuteQuery(Database, "SELECT * FROM test");
+    // Выполняем запросы SELECT и измеряем время выполнения
+    for (int i = 0; i < sizeof(num_records) / sizeof(num_records[0]); ++i) {
+        string query = "SELECT * FROM test LIMIT " + to_string(num_records[i]);
+        ExecuteQuery(Database, query.c_str());
+    }
 
     // Удаляем данные из таблицы
     char* errmsg;
